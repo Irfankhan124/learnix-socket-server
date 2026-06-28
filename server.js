@@ -36,6 +36,7 @@ const supabase = createClient(
  * }
  */
 const userSockets = new Map();
+const lastSeenMap = new Map();
 
 function nowIso() {
   return new Date().toISOString();
@@ -43,6 +44,7 @@ function nowIso() {
 
 function getUserPresence(userId) {
   const record = userSockets.get(userId);
+  const savedLastSeen = lastSeenMap.get(userId) || null;
 
   if (!record || record.sockets.size === 0) {
     return {
@@ -50,7 +52,7 @@ function getUserPresence(userId) {
       online: false,
       activeThreadId: null,
       activeScreen: null,
-      lastSeenAt: null,
+      lastSeenAt: savedLastSeen,
       fullName: "",
       role: "",
     };
@@ -58,7 +60,7 @@ function getUserPresence(userId) {
 
   let activeThreadId = null;
   let activeScreen = "app";
-  let lastSeenAt = null;
+  let lastSeenAt = savedLastSeen || nowIso();
 
   for (const item of record.sockets.values()) {
     if (item.activeThreadId) {
@@ -141,6 +143,9 @@ function removeUserSocket(socket) {
 
   const record = userSockets.get(userId);
   if (!record) return userId;
+
+  const time = nowIso();
+  lastSeenMap.set(userId, time);
 
   record.sockets.delete(socket.id);
 
