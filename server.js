@@ -179,6 +179,25 @@ app.get("/health", (req, res) => {
 });
 
 io.on("connection", (socket) => {
+
+  socket.on("presence:check", ({ myUserId, otherUserId, threadId }, callback) => {
+  const other = getUserPresence(otherUserId);
+
+  const result = {
+    ...other,
+    inThisChat:
+      Boolean(other.online) &&
+      Boolean(threadId) &&
+      other.activeThreadId === threadId,
+  };
+
+  if (callback) callback(result);
+
+  if (myUserId) {
+    socket.emit("presence:update", result);
+  }
+});
+  
   socket.on("user:online", ({ userId, fullName, role }) => {
     if (!userId) return;
 
@@ -213,33 +232,45 @@ io.on("connection", (socket) => {
     if (callback) callback(result);
   });
 
-  socket.on("chat:join", ({ userId, threadId }) => {
-    if (!userId || !threadId) return;
+ socket.on("chat:join", ({ userId, threadId, otherUserId }) => {
+  if (!userId || !threadId) return;
 
-    if (!socket.data.userId) {
-      addOrUpdateUserSocket({
-        socket,
-        userId,
-        fullName: "",
-        role: "",
-      });
-    }
-
-    socket.join(threadId);
-
-    updateSocketActivity({
+  if (!socket.data.userId) {
+    addOrUpdateUserSocket({
       socket,
-      activeThreadId: threadId,
-      activeScreen: "chat",
-    });
-
-    socket.to(threadId).emit("chat:user-active", {
       userId,
-      threadId,
+      fullName: "",
+      role: "",
     });
+  }
 
-    emitPresence(userId);
+  socket.join(threadId);
+
+  updateSocketActivity({
+    socket,
+    activeThreadId: threadId,
+    activeScreen: "chat",
   });
+
+  socket.to(threadId).emit("chat:user-active", {
+    userId,
+    threadId,
+  });
+
+  emitPresence(userId);
+
+  if (otherUserId) {
+    const other = getUserPresence(otherUserId);
+
+    socket.emit("presence:update", {
+      ...other,
+      inThisChat:
+        Boolean(other.online) &&
+        Boolean(threadId) &&
+        other.activeThreadId === threadId,
+    });
+  }
+});
 
   socket.on("chat:leave", ({ userId, threadId }) => {
     if (!userId || !threadId) return;
