@@ -154,10 +154,18 @@ function removeUserSocket(socket) {
 }
 
 app.get("/", (req, res) => {
+  let totalSockets = 0;
+
+  for (const user of userSockets.values()) {
+    totalSockets += user.sockets.size;
+  }
+
   res.json({
     ok: true,
     service: "Learnix Socket Server",
     onlineUsers: userSockets.size,
+    totalSockets,
+    users: Array.from(userSockets.keys()),
     time: nowIso(),
   });
 });
