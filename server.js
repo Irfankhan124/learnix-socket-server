@@ -363,6 +363,64 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("message:delete-for-me", async ({ messageId, userId }, callback) => {
+  try {
+    if (!messageId || !userId) throw new Error("Missing delete data");
+
+    const { error } = await supabase.from("chat_message_deletes").upsert(
+      {
+        message_id: messageId,
+        user_id: userId,
+      },
+      { onConflict: "message_id,user_id" }
+    );
+
+    if (error) throw error;
+
+    if (callback) callback({ ok: true, messageId });
+  } catch (error) {
+    if (callback) callback({ ok: false, error: error.message });
+  }
+});
+
+socket.on("message:delete-for-everyone", async ({ messageId, userId, threadId }, callback) => {
+  try {
+    if (!messageId || !userId || !threadId) throw new Error("Missing delete data");
+
+    const { data: msg, error: msgError } = await supabase
+      .from("chat_messages")
+      .select("id, sender_id")
+      .eq("id", messageId)
+      .single();
+
+    if (msgError) throw msgError;
+
+    if (msg.sender_id !== userId) {
+      throw new Error("You can only delete your own message for everyone");
+    }
+
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .update({
+        message: "This message was deleted",
+        deleted_for_everyone: true,
+        deleted_at: new Date().toISOString(),
+        deleted_by: userId,
+      })
+      .eq("id", messageId)
+      .select("id, thread_id, sender_id, message, message_type, metadata, created_at, deleted_for_everyone, deleted_at, deleted_by")
+      .single();
+
+    if (error) throw error;
+
+    io.to(threadId).emit("message:deleted", data);
+
+    if (callback) callback({ ok: true, message: data });
+  } catch (error) {
+    if (callback) callback({ ok: false, error: error.message });
+  }
+});
+
   socket.on("message:seen", async ({ threadId, userId }) => {
     if (!threadId || !userId) return;
 
