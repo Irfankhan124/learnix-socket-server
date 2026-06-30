@@ -372,23 +372,19 @@ io.on("connection", (socket) => {
       mediaType = null,
       audioDuration = null,
       replyToMessageId = null,
+      clientTempId = null,
     } = payload || {};
-
-    console.log("📩 message:send payload:", {
-      threadId,
-      senderId,
-      messageType,
-      hasMedia: Boolean(mediaUrl),
-      audioDuration,
-    });
 
     if (!threadId || !senderId) {
       throw new Error(
-        `Missing message data: threadId=${threadId || "empty"}, senderId=${
-          senderId || "empty"
-        }`
+        `Missing message data: threadId=${threadId || "empty"}, senderId=${senderId || "empty"}`
       );
     }
+
+    const finalMetadata = {
+      ...(metadata || {}),
+      ...(clientTempId ? { client_temp_id: clientTempId } : {}),
+    };
 
     const { data, error } = await supabase
       .from("chat_messages")
@@ -397,7 +393,7 @@ io.on("connection", (socket) => {
         sender_id: senderId,
         message: message || "",
         message_type: messageType || "text",
-        metadata: metadata || {},
+        metadata: finalMetadata,
         media_url: mediaUrl || null,
         media_type: mediaType || null,
         audio_duration: audioDuration || null,
@@ -423,21 +419,10 @@ io.on("connection", (socket) => {
 
     io.to(threadId).emit("message:new", data);
 
-    if (callback) {
-      callback({
-        ok: true,
-        message: data,
-      });
-    }
+    if (callback) callback({ ok: true, message: data });
   } catch (error) {
     console.log("❌ message:send error:", error.message);
-
-    if (callback) {
-      callback({
-        ok: false,
-        error: error.message,
-      });
-    }
+    if (callback) callback({ ok: false, error: error.message });
   }
 });
   socket.on("message:delete-for-me", async ({ messageId, userId }, callback) => {
