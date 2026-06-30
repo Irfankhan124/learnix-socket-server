@@ -277,6 +277,50 @@ io.on("connection", (socket) => {
   }
 });
 
+  socket.on("message:react", async ({ threadId, messageId, userId, emoji }, callback) => {
+  try {
+    if (!threadId || !messageId || !userId) {
+      throw new Error("Missing reaction data");
+    }
+
+    if (!emoji) {
+      const { error } = await supabase
+        .from("chat_message_reactions")
+        .delete()
+        .eq("message_id", messageId)
+        .eq("user_id", userId);
+
+      if (error) throw error;
+
+      io.to(threadId).emit("message:reaction:update", {
+        threadId, messageId, userId, emoji: null,
+      });
+
+      if (callback) callback({ ok: true });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("chat_message_reactions")
+      .upsert(
+        { thread_id: threadId, message_id: messageId, user_id: userId, emoji },
+        { onConflict: "message_id,user_id" }
+      )
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    io.to(threadId).emit("message:reaction:update", {
+      threadId, messageId, userId, emoji, reaction: data,
+    });
+
+    if (callback) callback({ ok: true, reaction: data });
+  } catch (error) {
+    if (callback) callback({ ok: false, error: error.message });
+  }
+});
+
   socket.on("chat:leave", ({ userId, threadId }) => {
     if (!userId || !threadId) return;
 
