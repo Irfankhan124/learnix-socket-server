@@ -360,53 +360,86 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("message:send", async ({ threadId, senderId, message }, callback) => {
-    try {
-      const cleanMessage = String(message || "").trim();
+ socket.on("message:send", async (payload, callback) => {
+  try {
+    const {
+      threadId,
+      senderId,
+      message = "",
+      messageType = "text",
+      metadata = {},
+      mediaUrl = null,
+      mediaType = null,
+      audioDuration = null,
+      replyToMessageId = null,
+    } = payload || {};
 
-      if (!threadId || !senderId || !cleanMessage) {
-        throw new Error("Missing message data");
-      }
+    console.log("📩 message:send payload:", {
+      threadId,
+      senderId,
+      messageType,
+      hasMedia: Boolean(mediaUrl),
+      audioDuration,
+    });
 
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert({
-          thread_id: threadId,
-          sender_id: senderId,
-          message: cleanMessage,
-          message_type: "text",
-          metadata: {},
-        })
-        .select(
-          "id, thread_id, sender_id, message, message_type, metadata, created_at"
-        )
-        .single();
-
-      if (error) throw error;
-
-      await supabase
-        .from("chat_threads")
-        .update({ updated_at: nowIso() })
-        .eq("id", threadId);
-
-      io.to(threadId).emit("message:new", data);
-
-      if (callback) {
-        callback({
-          ok: true,
-          message: data,
-        });
-      }
-    } catch (error) {
-      if (callback) {
-        callback({
-          ok: false,
-          error: error.message || "Message failed",
-        });
-      }
+    if (!threadId || !senderId) {
+      throw new Error(
+        `Missing message data: threadId=${threadId || "empty"}, senderId=${
+          senderId || "empty"
+        }`
+      );
     }
-  });
 
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .insert({
+        thread_id: threadId,
+        sender_id: senderId,
+        message: message || "",
+        message_type: messageType || "text",
+        metadata: metadata || {},
+        media_url: mediaUrl || null,
+        media_type: mediaType || null,
+        audio_duration: audioDuration || null,
+        reply_to_message_id: replyToMessageId || null,
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    await supabase
+      .from("chat_threads")
+      .update({
+        last_message:
+          messageType === "audio"
+            ? "🎤 Voice message"
+            : messageType === "image"
+            ? "📷 Photo"
+            : message || "",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", threadId);
+
+    io.to(threadId).emit("message:new", data);
+
+    if (callback) {
+      callback({
+        ok: true,
+        message: data,
+      });
+    }
+  } catch (error) {
+    console.log("❌ message:send error:", error.message);
+
+    if (callback) {
+      callback({
+        ok: false,
+        error: error.message,
+      });
+    }
+  }
+});
   socket.on("message:delete-for-me", async ({ messageId, userId }, callback) => {
   try {
     if (!messageId || !userId) throw new Error("Missing delete data");
